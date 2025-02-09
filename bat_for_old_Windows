@@ -1,79 +1,86 @@
 @echo off
-echo Скрипт для создания самоподписанного сертификата для сервера WEC
+chcp 866 > nul
+setlocal EnableDelayedExpansion
 
-:: ** Настройки **
-SET CertificateName=WECServerCert
-SET KeyLength=2048
-SET ValidityYears=1
+:: ===============================
+:: Конфигурация
+:: ===============================
+SET "CERT_NAME=WECServerCert"
+SET "KEY_LENGTH=2048"
+SET "PROVIDER=Microsoft RSA SChannel Cryptographic Provider"
+SET "HASH_ALG=sha256"
+SET "SERVER_FQDN=%COMPUTERNAME%"
 
-:: ** Автоматическое получение FQDN **
-FOR /F "tokens=*" %%a IN ('hostname') DO SET ServerFQDN=%%a
-IF "%ServerFQDN%"=="%COMPUTERNAME%" (
-    echo Не удалось автоматически определить FQDN. Пожалуйста, укажите FQDN вручную.
-    SET /p ServerFQDN="Введите FQDN сервера (например, wec.example.com): "
-    IF "%ServerFQDN%"=="" (
-        echo FQDN не указан. Скрипт завершен.
-        goto :error
-    )
-)
-echo FQDN сервера определен как: %ServerFQDN%
+echo Создание сертификата для сервера: %SERVER_FQDN%
+echo Текущая дата: %date%
 
-:: ** Путь для сохранения файлов **
-SET CertRequestFile=%CertificateName%.req
-SET CertInfFile=%CertificateName%.inf
-SET CertFile=%CertificateName%.cer
-
-echo Создание INF файла запроса сертификата...
-echo [Version] > %CertInfFile%
-echo Signature="$Windows NT$" >> %CertInfFile%
-echo [NewRequest] >> %CertInfFile%
-echo Subject="CN=%ServerFQDN%" >> %CertInfFile%
-echo KeySpec=1 >> %CertInfFile%
-echo KeyLength=%KeyLength% >> %CertInfFile%
-echo Exportable=TRUE >> %CertInfFile%
-echo MachineKeySet=TRUE >> %CertInfFile%
-echo SMIME=FALSE >> %CertInfFile%
-echo PrivateKeyArchive=FALSE >> %CertInfFile%
-echo UserProtected=FALSE >> %CertInfFile%
-echo UseExistingKeySet=FALSE >> %CertInfFile%
-echo ProviderName="Microsoft RSA SChannel Cryptographic Provider" >> %CertInfFile%
-echo ProviderType=12 >> %CertInfFile%
-echo RequestType=PKCS10 >> %CertInfFile%
-echo HashAlgorithm=sha256 >> %CertInfFile%
-echo [Extensions] >> %CertInfFile%
-echo 2.5.29.17 = "{text}" >> %CertInfFile%
-echo _continue_ = "dns=%ServerFQDN%&" >> %CertInfFile%
-echo 2.5.29.37 = "{text}" >> %CertInfFile%
-echo _continue_ = "1.3.6.1.5.5.7.3.1" >> %CertInfFile%
-
-echo.
-echo Генерация запроса сертификата...
-certreq -new %CertInfFile% %CertRequestFile%
-if NOT %ERRORLEVEL% == 0 (
+:: ===============================
+:: Создание INF файла
+:: ===============================
+(
+    echo [Version]
+    echo Signature="$Windows NT$"
     echo.
-    echo ** Ошибка при генерации запроса сертификата. Проверьте ошибки выше. **
-    goto :error
-)
-
-echo.
-echo Самоподписание сертификата...
-certreq -sign %CertRequestFile% %CertFile%
-if NOT %ERRORLEVEL% == 0 (
+    echo [NewRequest]
+    echo Subject="CN=%SERVER_FQDN%"
+    echo FriendlyName="%CERT_NAME%"
+    echo KeyLength=%KEY_LENGTH%
+    echo KeySpec=1
+    echo KeyUsage=0xA0
+    echo MachineKeySet=True
+    echo ProviderName="%PROVIDER%"
+    echo ProviderType=12
+    echo RequestType=PKCS10
+    echo HashAlgorithm=%HASH_ALG%
+    echo ValidityPeriod=Years
+    echo ValidityPeriodUnits=1
     echo.
-    echo ** Ошибка при самоподписании сертификата. Проверьте ошибки выше. **
-    goto :error
+    echo [EnhancedKeyUsageExtension]
+    echo OID=1.3.6.1.5.5.7.3.1
+    echo.
+    echo [Extensions]
+    echo 2.5.29.17 = "{text}"
+    echo _continue_ = "dns=%SERVER_FQDN%"
+) > "%CERT_NAME%.inf"
+
+:: ===============================
+:: Создание и подписание сертификата
+:: ===============================
+echo.
+echo Создание запроса сертификата...
+certreq -new "%CERT_NAME%.inf" "%CERT_NAME%.req"
+IF NOT %ERRORLEVEL%==0 (
+    echo Ошибка при создании запроса сертификата
+    goto :ERROR
 )
 
 echo.
-echo ** Сертификат успешно создан: %CertFile% **
-echo.
-echo ** Инструкции: **
-echo 1. Импортируйте файл '%CertFile%' в хранилище "Trusted Root Certification Authorities" на сервере WEC.
-echo 2. Экспортируйте файл '%CertFile%' и импортируйте его в хранилище "Trusted Root Certification Authorities" на недоменных компьютерах.
-echo.
+echo Подписание сертификата...
+certreq -sign "%CERT_NAME%.req" "%CERT_NAME%.cer"
+IF NOT %ERRORLEVEL%==0 (
+    echo Ошибка при подписании сертификата
+    goto :ERROR
+)
 
-goto :end
+:: ===============================
+:: Проверка результата
+:: ===============================
+IF EXIST "%CERT_NAME%.cer" (
+    echo.
+    echo Сертификат успешно создан: %CERT_NAME%.cer
+    echo.
+    echo Следующие шаги:
+    echo 1. Импортируйте сертификат в хранилище "Доверенные корневые центры сертификации"
+    echo 2. Настройте WEC для использования этого сертификата
+) ELSE (
+    echo Ошибка: файл сертификата не создан
+    goto :ERROR
+)
 
-:error
+goto :EOF
+
+:ERROR
+echo.
+echo Произошла ошибка при выполнении скрипта
 pause
-:end
+exit /b 1
