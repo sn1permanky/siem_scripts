@@ -1,0 +1,84 @@
+@echo off
+echo Скрипт для создания самоподписанного сертификата для сервера WEC
+
+:: ** Настройки **
+SET CertificateName=WECServerCert
+SET KeyLength=2048          :: Длина ключа (2048)
+SET ValidityYears=1         :: Срок действия сертификата в годах (1 год)
+
+:: ** Автоматическое получение FQDN **
+FOR /F "tokens=*" %%a IN ('hostname -f') DO SET ServerFQDN=%%a
+IF "%ServerFQDN%"=="%COMPUTERNAME%" (
+    echo Не удалось автоматически определить FQDN. Пожалуйста, укажите FQDN вручную.
+    SET /p ServerFQDN="Введите FQDN сервера (например, wec.example.com): "
+    IF "%ServerFQDN%"=="" (
+        echo FQDN не указан. Скрипт завершен.
+        goto :error
+    )
+)
+echo FQDN сервера определен как: %ServerFQDN%
+
+:: ** Путь для сохранения файлов **
+SET CertRequestFile=%CertificateName%.req
+SET CertInfFile=%CertificateName%.inf
+SET CertFile=%CertificateName%.cer
+
+echo Создание INF файла запроса сертификата...
+echo [Version] > %CertInfFile%
+echo Signature="$Windows NT$" >> %CertInfFile%
+echo [NewRequest] >> %CertInfFile%
+echo Subject="CN=%ServerFQDN%" >> %CertInfFile%
+echo KeySpec=1 >> %CertInfFile%
+echo KeyLength=%KeyLength% >> %CertInfFile%
+echo Exportable=TRUE >> %CertInfFile%
+echo MachineKeySet=TRUE >> %CertInfFile%
+echo SMIME=FALSE >> %CertInfFile%
+echo PrivateKeyArchive=FALSE >> %CertInfFile%
+echo UserProtected=FALSE >> %CertInfFile%
+echo UseExistingKeySet=FALSE >> %CertInfFile%
+echo ProviderName="Microsoft RSA SChannel Cryptographic Provider" >> %CertInfFile%
+echo ProviderType=12 >> %CertInfFile%
+echo RequestType=PKCS10 >> %CertInfFile%
+echo HashAlgorithm=SHA256 >> %CertInfFile%  :: Используем SHA256 для подписи
+echo ValidityPeriodUnits = "years" >> %CertInfFile%
+echo ValidityPeriod = "%ValidityYears%" >> %CertInfFile%
+echo [Extensions] >> %CertInfFile%
+echo 1.3.6.1.5.5.7.3.1 = "{text}"  :: Server Authentication EKU
+echo 2.5.29.17 = "{text}"         :: Subject Alternative Name (SAN)
+echo "DNS=%ServerFQDN%"          >> %CertInfFile%
+
+echo.
+echo Генерация запроса сертификата...
+certreq -new %CertInfFile% %CertRequestFile%
+if NOT %ERRORLEVEL% == 0 (
+    echo.
+    echo ** Ошибка при генерации запроса сертификата. Проверьте ошибки выше. **
+    goto :error
+)
+
+echo.
+echo Самоподписание сертификата...
+certreq -sign %CertRequestFile% %CertFile%
+if NOT %ERRORLEVEL% == 0 (
+    echo.
+    echo ** Ошибка при самоподписании сертификата. Проверьте ошибки выше. **
+    goto :error
+)
+
+echo.
+echo ** Сертификат успешно создан: %CertFile% **
+echo.
+echo ** Инструкции: **
+echo 1. Импортируйте файл '%CertFile%' в хранилище "Trusted Root Certification Authorities" на сервере WEC.
+echo 2. Экспортируйте файл '%CertFile%' (включая приватный ключ, если необходимо) и импортируйте его в хранилище "Trusted Root Certification Authorities" на недоменных компьютерах, которые будут подключаться к WEC.
+echo.
+echo ** ВАЖНО: **
+echo Самоподписанные сертификаты не являются доверенными по умолчанию.
+echo Вам необходимо вручную импортировать сертификат в доверенные корневые хранилища на всех компьютерах, которые должны доверять этому сертификату.
+echo.
+
+goto :end
+
+:error
+pause
+:end
