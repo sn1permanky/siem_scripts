@@ -3,11 +3,11 @@ echo Скрипт для создания самоподписанного се�
 
 :: ** Настройки **
 SET CertificateName=WECServerCert
-SET KeyLength=2048          :: Длина ключа (2048)
-SET ValidityYears=1         :: Срок действия сертификата в годах (1 год)
+SET KeyLength=2048
+SET ValidityYears=1
 
 :: ** Автоматическое получение FQDN **
-FOR /F "tokens=*" %%a IN ('hostname -f') DO SET ServerFQDN=%%a
+FOR /F "tokens=*" %%a IN ('hostname') DO SET ServerFQDN=%%a
 IF "%ServerFQDN%"=="%COMPUTERNAME%" (
     echo Не удалось автоматически определить FQDN. Пожалуйста, укажите FQDN вручную.
     SET /p ServerFQDN="Введите FQDN сервера (например, wec.example.com): "
@@ -39,13 +39,12 @@ echo UseExistingKeySet=FALSE >> %CertInfFile%
 echo ProviderName="Microsoft RSA SChannel Cryptographic Provider" >> %CertInfFile%
 echo ProviderType=12 >> %CertInfFile%
 echo RequestType=PKCS10 >> %CertInfFile%
-echo HashAlgorithm=SHA256 >> %CertInfFile%  :: Используем SHA256 для подписи
-echo ValidityPeriodUnits = "years" >> %CertInfFile%
-echo ValidityPeriod = "%ValidityYears%" >> %CertInfFile%
+echo HashAlgorithm=sha256 >> %CertInfFile%
 echo [Extensions] >> %CertInfFile%
-echo 1.3.6.1.5.5.7.3.1 = "{text}"  :: Server Authentication EKU
-echo 2.5.29.17 = "{text}"         :: Subject Alternative Name (SAN)
-echo "DNS=%ServerFQDN%"          >> %CertInfFile%
+echo 2.5.29.17 = "{text}" >> %CertInfFile%
+echo _continue_ = "dns=%ServerFQDN%&" >> %CertInfFile%
+echo 2.5.29.37 = "{text}" >> %CertInfFile%
+echo _continue_ = "1.3.6.1.5.5.7.3.1" >> %CertInfFile%
 
 echo.
 echo Генерация запроса сертификата...
@@ -70,11 +69,7 @@ echo ** Сертификат успешно создан: %CertFile% **
 echo.
 echo ** Инструкции: **
 echo 1. Импортируйте файл '%CertFile%' в хранилище "Trusted Root Certification Authorities" на сервере WEC.
-echo 2. Экспортируйте файл '%CertFile%' (включая приватный ключ, если необходимо) и импортируйте его в хранилище "Trusted Root Certification Authorities" на недоменных компьютерах, которые будут подключаться к WEC.
-echo.
-echo ** ВАЖНО: **
-echo Самоподписанные сертификаты не являются доверенными по умолчанию.
-echo Вам необходимо вручную импортировать сертификат в доверенные корневые хранилища на всех компьютерах, которые должны доверять этому сертификату.
+echo 2. Экспортируйте файл '%CertFile%' и импортируйте его в хранилище "Trusted Root Certification Authorities" на недоменных компьютерах.
 echo.
 
 goto :end
