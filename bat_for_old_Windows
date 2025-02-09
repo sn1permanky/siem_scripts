@@ -1,5 +1,6 @@
 @echo off
-chcp 866 > nul
+chcp 1251 > nul
+# Для отображения кириллицы
 setlocal EnableDelayedExpansion
 
 :: ===============================
@@ -27,7 +28,7 @@ echo Текущая дата: %date%
     echo KeyLength=%KEY_LENGTH%
     echo KeySpec=1
     echo KeyUsage=0xA0
-    echo MachineKeySet=True
+    echo MachineKeySet=TRUE
     echo ProviderName="%PROVIDER%"
     echo ProviderType=12
     echo RequestType=PKCS10
@@ -35,12 +36,9 @@ echo Текущая дата: %date%
     echo ValidityPeriod=Years
     echo ValidityPeriodUnits=1
     echo.
-    echo [EnhancedKeyUsageExtension]
-    echo OID=1.3.6.1.5.5.7.3.1
-    echo.
     echo [Extensions]
-    echo 2.5.29.17 = "{text}"
-    echo _continue_ = "dns=%SERVER_FQDN%"
+    echo 2.5.29.17="{text}DNS=%SERVER_FQDN%"
+    echo 2.5.29.37="{text}1.3.6.1.5.5.7.3.1"
 ) > "%CERT_NAME%.inf"
 
 :: ===============================
