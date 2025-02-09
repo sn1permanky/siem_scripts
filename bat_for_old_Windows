@@ -1,84 +1,44 @@
 @echo off
-chcp 1251 > nul
-# Для отображения кириллицы
 setlocal EnableDelayedExpansion
 
-:: ===============================
-:: Конфигурация
-:: ===============================
-SET "CERT_NAME=WECServerCert"
-SET "KEY_LENGTH=2048"
-SET "PROVIDER=Microsoft RSA SChannel Cryptographic Provider"
-SET "HASH_ALG=sha256"
-SET "SERVER_FQDN=%COMPUTERNAME%"
+:: Задаем переменные
+set HOSTNAME=%COMPUTERNAME%
+set CERT_FILE=%HOSTNAME%.cer
+set PVK_FILE=%HOSTNAME%.pvk
+set PFX_FILE=%HOSTNAME%.pfx
 
-echo Создание сертификата для сервера: %SERVER_FQDN%
-echo Текущая дата: %date%
+:: Запрашиваем пароль безопасным способом
+set "psCommand=powershell -Command "$pword = read-host 'Enter certificate password' -AsSecureString ; ^
+    $BSTR=[System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($pword); ^
+    [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)""
+for /f "usebackq delims=" %%p in (`%psCommand%`) do set PASSWORD=%%p
 
-:: ===============================
-:: Создание INF файла
-:: ===============================
-(
-    echo [Version]
-    echo Signature="$Windows NT$"
-    echo.
-    echo [NewRequest]
-    echo Subject="CN=%SERVER_FQDN%"
-    echo FriendlyName="%CERT_NAME%"
-    echo KeyLength=%KEY_LENGTH%
-    echo KeySpec=1
-    echo KeyUsage=0xA0
-    echo MachineKeySet=TRUE
-    echo ProviderName="%PROVIDER%"
-    echo ProviderType=12
-    echo RequestType=PKCS10
-    echo HashAlgorithm=%HASH_ALG%
-    echo ValidityPeriod=Years
-    echo ValidityPeriodUnits=1
-    echo.
-    echo [Extensions]
-    echo 2.5.29.17="{text}DNS=%SERVER_FQDN%"
-    echo 2.5.29.37="{text}1.3.6.1.5.5.7.3.1"
-) > "%CERT_NAME%.inf"
-
-:: ===============================
-:: Создание и подписание сертификата
-:: ===============================
-echo.
-echo Создание запроса сертификата...
-certreq -new "%CERT_NAME%.inf" "%CERT_NAME%.req"
-IF NOT %ERRORLEVEL%==0 (
-    echo Ошибка при создании запроса сертификата
-    goto :ERROR
+:: Проверяем, что пароль был введен
+if "!PASSWORD!"=="" (
+    echo Password cannot be empty
+    goto :EOF
 )
 
-echo.
-echo Подписание сертификата...
-certreq -sign "%CERT_NAME%.req" "%CERT_NAME%.cer"
-IF NOT %ERRORLEVEL%==0 (
-    echo Ошибка при подписании сертификата
-    goto :ERROR
-)
+echo Creating certificate...
 
-:: ===============================
-:: Проверка результата
-:: ===============================
-IF EXIST "%CERT_NAME%.cer" (
-    echo.
-    echo Сертификат успешно создан: %CERT_NAME%.cer
-    echo.
-    echo Следующие шаги:
-    echo 1. Импортируйте сертификат в хранилище "Доверенные корневые центры сертификации"
-    echo 2. Настройте WEC для использования этого сертификата
-) ELSE (
-    echo Ошибка: файл сертификата не создан
-    goto :ERROR
-)
+:: Создаем приватный ключ и сертификат
+makecert.exe -r -pe -n "CN=%HOSTNAME%" -ss MY -sr LocalMachine ^
+    -a sha256 -len 2048 -sky exchange -sp "Microsoft RSA SChannel Cryptographic Provider" ^
+    -sy 12 -#1 -b 01/01/2024 -e 01/01/2026 ^
+    -eku 1.3.6.1.5.5.7.3.1,1.3.6.1.5.5.7.3.2 ^
+    %CERT_FILE% -pvk %PVK_FILE%
 
-goto :EOF
+:: Экспортируем сертификат в формат PFX
+pvk2pfx.exe -pvk %PVK_FILE% -spc %CERT_FILE% -pfx %PFX_FILE% -po !PASSWORD!
 
-:ERROR
-echo.
-echo Произошла ошибка при выполнении скрипта
-pause
-exit /b 1
+:: Импортируем сертификат в хранилище локального компьютера
+certutil -f -importpfx %PFX_FILE% NoExport
+
+:: Очистка временных файлов и переменной с паролем
+del %CERT_FILE%
+del %PVK_FILE%
+del %PFX_FILE%
+set PASSWORD=
+
+echo Certificate creation completed successfully!
+endlocal
