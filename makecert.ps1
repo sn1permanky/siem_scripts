@@ -17,6 +17,22 @@ $EndDate = $StartDate.AddYears(10) # Срок действия сертифик�
 # Создание самоподписанного сертификата
 $Certificate = New-SelfSignedCertificate -DnsName $DnsName -CertStoreLocation Cert:\LocalMachine\My -FriendlyName $CertName -NotAfter $EndDate -KeyAlgorithm "RSA" -KeyLength 2048
 
+# Получение контекста сертификата для управления закрытым ключом
+$certContext = $Certificate.CertContext
+$keyName = ($certContext.ContainerName)
+
+# Получение ACL для закрытого ключа
+$acl = Get-Acl -Path "Cert:\LocalMachine\Crypto\Keys\$keyName"
+
+# Создание объекта AccessRule для Network Service с правом Read
+$accessRule = New-Object System.Security.AccessControl.CryptoKeyAccessRule("NETWORK SERVICE", "Read", "Allow")
+
+# Добавление AccessRule в ACL
+$acl.AddAccessRule($accessRule)
+
+# Установка обновленного ACL для закрытого ключа
+Set-Acl -Path "Cert:\LocalMachine\Crypto\Keys\$keyName" -Acl $acl
+
 # Экспорт сертификата в формате PFX (PKCS #12) с паролем (если был введен)
 if ($Password) {
     Export-PfxCertificate -Cert $Certificate -FilePath "$CertName.pfx" -Password $PasswordString
@@ -29,3 +45,4 @@ if ($Password) {
 Write-Host "Сертификат создан и установлен в хранилище 'LocalMachine\My'."
 Write-Host "Имя сертификата: $CertName"
 Write-Host "Отпечаток сертификата: $($Certificate.Thumbprint)"
+Write-Host "Права доступа 'Read' для 'Network Service' добавлены к закрытому ключу сертификата."
