@@ -12,26 +12,11 @@ if ($Password) {
 $DnsName = [System.Net.Dns]::GetHostEntry("localhost").HostName
 $CertName = "SelfSignedCert_$DnsName" # Имя сертификата
 $StartDate = Get-Date
-$EndDate = $StartDate.AddYears(10) # Срок действия сертификата (10 лет)
+$EndDate = $StartDate.AddYears(1) # Срок действия сертификата (1 год)
 
 # Создание самоподписанного сертификата
 $Certificate = New-SelfSignedCertificate -DnsName $DnsName -CertStoreLocation Cert:\LocalMachine\My -FriendlyName $CertName -NotAfter $EndDate -KeyAlgorithm "RSA" -KeyLength 2048
 
-# Получение контекста сертификата для управления закрытым ключом
-$certContext = $Certificate.CertContext
-$keyName = ($certContext.ContainerName)
-
-# Получение ACL для закрытого ключа
-$acl = Get-Acl -Path "Cert:\LocalMachine\Crypto\Keys\$keyName"
-
-# Создание объекта AccessRule для Network Service с правом Read
-$accessRule = New-Object System.Security.AccessControl.CryptoKeyAccessRule("NETWORK SERVICE", "Read", "Allow")
-
-# Добавление AccessRule в ACL
-$acl.AddAccessRule($accessRule)
-
-# Установка обновленного ACL для закрытого ключа
-Set-Acl -Path "Cert:\LocalMachine\Crypto\Keys\$keyName" -Acl $acl
 
 # Экспорт сертификата в формате PFX (PKCS #12) с паролем (если был введен)
 if ($Password) {
